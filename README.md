@@ -1,6 +1,14 @@
 # spec_checker
 
+> Find missing typespecs. Extract type signatures. One tool, any project.
+
+[![Elixir](https://img.shields.io/badge/Elixir-1.14%2B-4e2a8e)](https://elixir-lang.org/)
+[![OTP](https://img.shields.io/badge/OTP-25%2B-red)](https://www.erlang.org/)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 A command-line tool that checks your Elixir code for missing `@spec` annotations and can extract a complete type reference from your compiled project. Install once, use from any project.
+
+---
 
 ## Install
 
@@ -13,50 +21,107 @@ mix spec_checker.install --dir ~/.local/bin
 
 `--dir` can be any directory on your PATH. If omitted, the escript is built but not copied.
 
+---
+
 ## Examples
 
 **Are all my functions specced?**
 
 ```bash
 $ check_specs lib/**/*.ex
-{"status":"pass","total_missing":0,"missing":[],"errors":[]}
 ```
+
+<details>
+<summary>Output (all specs present)</summary>
+
+```json
+{
+  "status": "pass",
+  "total_missing": 0,
+  "missing": [],
+  "errors": []
+}
+```
+</details>
+
+---
 
 **Which functions am I missing specs for?**
 
 ```bash
 $ check_specs lib/accounts.ex
-{"status":"fail","total_missing":2,"missing":[
-  {"file":"lib/accounts.ex","name":"get_user","arity":1,"kind":"def","line":12},
-  {"file":"lib/accounts.ex","name":"hash_password","arity":1,"kind":"defp","line":34}
-],"errors":[]}
 ```
+
+<details>
+<summary>Output (missing specs found)</summary>
+
+```json
+{
+  "status": "fail",
+  "total_missing": 2,
+  "missing": [
+    {"file": "lib/accounts.ex", "name": "get_user", "arity": 1, "kind": "def", "line": 12},
+    {"file": "lib/accounts.ex", "name": "hash_password", "arity": 1, "kind": "defp", "line": 34}
+  ],
+  "errors": []
+}
+```
+</details>
+
+---
 
 **What's the full type API for a module?**
 
 ```bash
 $ check_specs --dump _build/dev/lib/my_app/ebin MyApp.Accounts
-{"status":"pass","total_specs":3,"specs":[
-  {"module":"MyApp.Accounts","name":"get_user","arity":1,
-   "signature":"get_user(Ecto.UUID.t()) :: User.t() | nil","source":"module"},
-  {"module":"MyApp.Accounts","name":"create_user","arity":2,
-   "signature":"create_user(map(), keyword()) :: {:ok, User.t()} | {:error, Changeset.t()}",
-   "source":"module"}
-]}
 ```
 
-**What about callback functions?** Behaviour specs are resolved automatically:
+<details>
+<summary>Output (type signatures extracted from BEAM)</summary>
+
+```json
+{
+  "status": "pass",
+  "total_specs": 2,
+  "specs": [
+    {"module": "MyApp.Accounts", "name": "get_user", "arity": 1,
+     "signature": "get_user(Ecto.UUID.t()) :: User.t() | nil",
+     "source": "module"},
+    {"module": "MyApp.Accounts", "name": "create_user", "arity": 2,
+     "signature": "create_user(map(), keyword()) :: {:ok, User.t()} | {:error, Changeset.t()}",
+     "source": "module"}
+  ]
+}
+```
+</details>
+
+---
+
+**What about callback functions?** Behaviour specs are resolved automatically.
 
 ```bash
 $ check_specs --dump _build/dev/lib/my_app/ebin MyApp.Worker
-{"status":"pass","total_specs":1,"specs":[
-  {"module":"MyApp.Worker","name":"perform","arity":1,
-   "signature":"perform(Oban.Job.t()) :: :ok | {:error, term()}",
-   "source":"behaviour","behaviour":"Oban.Worker"}
-]}
 ```
 
-**Human-readable output?** Add `--format text`:
+<details>
+<summary>Output (callback spec from behaviour)</summary>
+
+```json
+{
+  "status": "pass",
+  "total_specs": 1,
+  "specs": [
+    {"module": "MyApp.Worker", "name": "perform", "arity": 1,
+     "signature": "perform(Oban.Job.t()) :: :ok | {:error, term()}",
+     "source": "behaviour", "behaviour": "Oban.Worker"}
+  ]
+}
+```
+</details>
+
+---
+
+**Human-readable output?** Add `--format text`.
 
 ```bash
 $ check_specs --format text lib/accounts.ex
@@ -75,6 +140,8 @@ MyApp.Accounts.get_user/1 :: get_user(Ecto.UUID.t()) :: User.t() | nil
 MyApp.Accounts.create_user/2 :: create_user(map(), keyword()) :: {:ok, User.t()} | {:error, Changeset.t()}
 ```
 
+---
+
 ## How it works
 
 **Check mode** (default) parses source files via the Elixir AST. No compilation needed. Functions with `@impl` (any form) are exempt since their type contract lives on the behaviour.
@@ -82,6 +149,8 @@ MyApp.Accounts.create_user/2 :: create_user(map(), keyword()) :: {:ok, User.t()}
 **Dump mode** (`--dump`) reads compiled `.beam` files directly — the same bytecode Dialyzer checks. It searches sibling ebin directories to resolve callback specs from behaviour modules.
 
 Output is JSON by default (for tooling and AI agents). `--format text` gives greppable one-line-per-function output.
+
+---
 
 ## For AI agents
 
@@ -103,6 +172,8 @@ Verify your work before committing:
 ```bash
 check_specs lib/my_app/accounts.ex lib/my_app/worker.ex
 ```
+
+---
 
 ## Requirements
 
