@@ -38,30 +38,36 @@ defmodule SpecChecker.CLI do
       )
 
   def run(args) do
-    {mode, format, rest} = parse_flags(args)
+    {mode, format, output, require_clean, project_root, rest} = parse_flags(args)
 
     case mode do
       :check -> check_files(rest, format)
-      :dump -> dump_specs(rest, format)
+      :dump -> dump_specs(rest, format, output, require_clean, project_root)
     end
   end
 
   # --- Flag parsing ---
 
   defp parse_flags(args) do
-    {mode, args} = extract_mode(args)
-    {format, args} = extract_format(args)
-    {mode, format, args}
+    {opts, rest, _} =
+      OptionParser.parse(args,
+        strict: [
+          dump: :boolean,
+          format: :string,
+          output: :string,
+          require_clean: :boolean,
+          project_root: :string
+        ]
+      )
+
+    mode = if opts[:dump], do: :dump, else: :check
+    format = if opts[:format] in ["json", "text"], do: String.to_atom(opts[:format]), else: :json
+    output = opts[:output]
+    require_clean = Keyword.get(opts, :require_clean, false)
+    project_root = opts[:project_root]
+
+    {mode, format, output, require_clean, project_root, rest}
   end
-
-  defp extract_mode(["--dump" | rest]), do: {:dump, rest}
-  defp extract_mode(args), do: {:check, args}
-
-  defp extract_format(["--format", fmt | rest]) when fmt in ["json", "text"] do
-    {String.to_atom(fmt), rest}
-  end
-
-  defp extract_format(args), do: {:json, args}
 
   # --- Check mode ---
 
@@ -108,23 +114,110 @@ defmodule SpecChecker.CLI do
 
   # --- Dump mode ---
 
-  defp dump_specs([], _format) do
+  defp dump_specs([], _format, _output, _require_clean, _project_root) do
     IO.puts(:stderr, usage())
     1
   end
 
-  defp dump_specs([dir | rest], format) do
+  defp dump_specs([dir | rest], format, output, require_clean, project_root) do
+    if require_clean do
+      root = project_root || infer_project_root(dir)
+
+      case root do
+        nil ->
+          IO.puts(:stderr, "error: --require-clean needs --project-root or an ebin path under _build/")
+          2
+
+        root ->
+          case run_clean_check(root, format) do
+            :clean -> do_dump(dir, rest, format, output)
+            {:dirty, exit_code} -> exit_code
+          end
+      end
+    else
+      do_dump(dir, rest, format, output)
+    end
+  end
+
+  defp infer_project_root(ebin_dir) do
+    ebin_dir
+    |> Path.expand()
+    |> do_infer_project_root()
+  end
+
+  defp do_infer_project_root("/"), do: nil
+
+  defp do_infer_project_root(dir) do
+    if File.exists?(Path.join(dir, "mix.exs")) do
+      dir
+    else
+      do_infer_project_root(Path.dirname(dir))
+    end
+  end
+
+  defp do_dump(dir, rest, format, output) do
     prefix = List.first(rest)
     opts = if prefix, do: [prefix: prefix], else: []
 
     case SpecDump.extract_from_dir(dir, opts) do
       {:ok, specs} ->
-        output_dump(format, specs)
+        write_or_print_dump(format, specs, output)
         0
 
       {:error, reason} ->
         output_dump_error(format, reason)
         2
+    end
+  end
+
+  defp write_or_print_dump(format, specs, nil) do
+    output_dump(format, specs)
+  end
+
+  defp write_or_print_dump(format, specs, path) do
+    content =
+      case format do
+        :text ->
+          Enum.map_join(specs, "\n", &SpecDump.format_line/1) <> "\n"
+
+        :json ->
+          build_dump_json(specs) |> Jason.encode!()
+      end
+
+    File.write!(path, content)
+    IO.puts(:stderr, "Wrote #{length(specs)} specs to #{path}")
+  end
+
+  defp run_clean_check(project_root, format) do
+    root = Path.expand(project_root)
+    lib_dir = Path.join(root, "lib")
+
+    source_files =
+      if File.dir?(lib_dir) do
+        Path.wildcard(Path.join(lib_dir, "**/*.ex"))
+      else
+        []
+      end
+
+    if source_files == [] do
+      :clean
+    else
+      {:ok, results} = FunctionSpecs.check_files(source_files)
+
+      {_parse_errors, check_results} =
+        Enum.split_with(results, fn {_path, result} -> match?({:error, _}, result) end)
+
+      missing =
+        Enum.flat_map(check_results, fn {path, specs} ->
+          Enum.map(specs, &{path, &1})
+        end)
+
+      if missing == [] do
+        :clean
+      else
+        output_check(format, 1, missing, [])
+        {:dirty, 1}
+      end
     end
   end
 
@@ -170,7 +263,11 @@ defmodule SpecChecker.CLI do
   # --- JSON output: dump mode ---
 
   defp output_dump(:json, specs) do
-    result = %{
+    IO.puts(Jason.encode!(build_dump_json(specs)))
+  end
+
+  defp build_dump_json(specs) do
+    %{
       status: "pass",
       total_specs: length(specs),
       specs:
@@ -186,8 +283,6 @@ defmodule SpecChecker.CLI do
           if entry.behaviour, do: Map.put(base, :behaviour, entry.behaviour), else: base
         end)
     }
-
-    IO.puts(Jason.encode!(result))
   end
 
   # --- Text output: dump mode ---
@@ -237,21 +332,24 @@ defmodule SpecChecker.CLI do
     """
     Usage:
       check_specs [--format json|text] <file1.ex> [file2.ex ...]
-      check_specs --dump [--format json|text] <ebin_dir> [ModulePrefix]
+      check_specs --dump [options] <ebin_dir> [ModulePrefix]
 
     Modes:
       (default)   Check that all functions in .ex files have @spec annotations.
-                  Parses source via AST. Functions with @impl true are exempt.
+                  Parses source via AST. Functions with @impl (any form) are exempt.
       --dump      Extract specs from compiled BEAM files in an ebin directory.
                   Reads bytecode directly — reflects what Dialyzer sees.
 
     Options:
-      --format json    JSON output (default)
-      --format text    Human-readable output
+      --format json          JSON output (default)
+      --format text          Human-readable output
+      --output <file>        Write dump output to file instead of stdout
+      --require-clean        Only dump if all source files have specs (exit 1 otherwise)
+      --project-root <dir>   Project root for --require-clean (inferred from ebin path if omitted)
 
     Exit codes:
       0  Success
-      1  Missing specs found (check mode) or no args
+      1  Missing specs found (check mode or --require-clean) or no args
       2  Errors encountered
 
     Examples:
@@ -259,6 +357,7 @@ defmodule SpecChecker.CLI do
       check_specs --format text lib/my_app/server.ex
       check_specs --dump _build/dev/lib/my_app/ebin
       check_specs --dump _build/dev/lib/my_app/ebin MyApp.Accounts
+      check_specs --dump --require-clean --output specs.txt _build/dev/lib/my_app/ebin
 
     JSON output schema (check mode):
       {

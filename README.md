@@ -158,22 +158,24 @@ Generate a `specs.txt` at the start of your session and keep it current as you w
 
 ```bash
 # Generate once after compilation
-check_specs --dump --format text _build/dev/lib/my_app/ebin > specs.txt
+check_specs --dump --format text --output specs.txt _build/dev/lib/my_app/ebin
 
 # Look up a module's API (cheaper than reading source)
 grep "Accounts\." specs.txt
 ```
 
-**Keep it fresh.** After any task that adds, removes, or modifies functions:
+**Keep it fresh.** After any task that adds, removes, or modifies functions, regenerate — but only if all specs are present:
 
 ```bash
-mix compile && check_specs --dump --format text _build/dev/lib/my_app/ebin > specs.txt
+mix compile && check_specs --dump --require-clean --format text --output specs.txt _build/dev/lib/my_app/ebin
 ```
 
-**Verify your work** before committing — check that all new/changed functions have specs:
+This checks `lib/**/*.ex` for missing specs first. If any are missing, `specs.txt` is not updated and the exit code is 1. If all specs are present, `specs.txt` is refreshed.
+
+Use `--project-root` if the ebin path doesn't sit under the project directory:
 
 ```bash
-check_specs lib/my_app/accounts.ex lib/my_app/worker.ex
+check_specs --dump --require-clean --project-root /path/to/project --output specs.txt /path/to/ebin
 ```
 
 ---
