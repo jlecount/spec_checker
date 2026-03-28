@@ -25,3 +25,7 @@ spec_checker-*.tar
 # Escript build artifact
 /check_specs
 
+# Generated spec dump
+specs.txt
+specs.json
+

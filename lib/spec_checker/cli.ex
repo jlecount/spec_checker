@@ -17,6 +17,11 @@ defmodule SpecChecker.CLI do
   alias SpecChecker.FunctionSpecs
   alias SpecChecker.SpecDump
 
+  @typep format :: :json | :text
+  @typep mode :: :check | :dump
+  @typep missing_entry :: {String.t(), FunctionSpecs.missing_spec()}
+  @typep error_entry :: %{file: String.t(), reason: String.t()}
+
   @spec main([String.t()]) :: no_return()
   def main(args) do
     args |> run() |> System.halt()
@@ -48,6 +53,7 @@ defmodule SpecChecker.CLI do
 
   # --- Flag parsing ---
 
+  @spec parse_flags([String.t()]) :: {mode(), format(), String.t() | nil, boolean(), String.t() | nil, [String.t()]}
   defp parse_flags(args) do
     {opts, rest, _} =
       OptionParser.parse(args,
@@ -71,6 +77,7 @@ defmodule SpecChecker.CLI do
 
   # --- Check mode ---
 
+  @spec check_files([String.t()], format()) :: 0 | 1 | 2
   defp check_files([], _format) do
     IO.puts(:stderr, usage())
     1
@@ -114,6 +121,7 @@ defmodule SpecChecker.CLI do
 
   # --- Dump mode ---
 
+  @spec dump_specs([String.t()], format(), String.t() | nil, boolean(), String.t() | nil) :: 0 | 1 | 2
   defp dump_specs([], _format, _output, _require_clean, _project_root) do
     IO.puts(:stderr, usage())
     1
@@ -139,12 +147,14 @@ defmodule SpecChecker.CLI do
     end
   end
 
+  @spec infer_project_root(String.t()) :: String.t() | nil
   defp infer_project_root(ebin_dir) do
     ebin_dir
     |> Path.expand()
     |> do_infer_project_root()
   end
 
+  @spec do_infer_project_root(String.t()) :: String.t() | nil
   defp do_infer_project_root("/"), do: nil
 
   defp do_infer_project_root(dir) do
@@ -155,6 +165,7 @@ defmodule SpecChecker.CLI do
     end
   end
 
+  @spec do_dump(String.t(), [String.t()], format(), String.t() | nil) :: 0 | 2
   defp do_dump(dir, rest, format, output) do
     prefix = List.first(rest)
     opts = if prefix, do: [prefix: prefix], else: []
@@ -170,6 +181,7 @@ defmodule SpecChecker.CLI do
     end
   end
 
+  @spec write_or_print_dump(format(), [SpecDump.spec_entry()], String.t() | nil) :: :ok
   defp write_or_print_dump(format, specs, nil) do
     output_dump(format, specs)
   end
@@ -188,6 +200,7 @@ defmodule SpecChecker.CLI do
     IO.puts(:stderr, "Wrote #{length(specs)} specs to #{path}")
   end
 
+  @spec run_clean_check(String.t(), format()) :: :clean | {:dirty, 1}
   defp run_clean_check(project_root, format) do
     root = Path.expand(project_root)
     lib_dir = Path.join(root, "lib")
@@ -223,6 +236,7 @@ defmodule SpecChecker.CLI do
 
   # --- JSON output: check mode ---
 
+  @spec output_check(format(), 0 | 1 | 2, [missing_entry()], [error_entry()]) :: :ok
   defp output_check(:json, exit_code, missing_specs, errors) do
     status = exit_code_to_status(exit_code)
 
@@ -262,10 +276,12 @@ defmodule SpecChecker.CLI do
 
   # --- JSON output: dump mode ---
 
+  @spec output_dump(format(), [SpecDump.spec_entry()]) :: :ok
   defp output_dump(:json, specs) do
     IO.puts(Jason.encode!(build_dump_json(specs)))
   end
 
+  @spec build_dump_json([SpecDump.spec_entry()]) :: map()
   defp build_dump_json(specs) do
     %{
       status: "pass",
@@ -295,6 +311,7 @@ defmodule SpecChecker.CLI do
 
   # --- Error output: dump mode ---
 
+  @spec output_dump_error(format(), String.t()) :: :ok
   defp output_dump_error(:json, reason) do
     IO.puts(Jason.encode!(%{status: "error", errors: [%{reason: reason}]}))
   end
@@ -305,10 +322,12 @@ defmodule SpecChecker.CLI do
 
   # --- Helpers ---
 
+  @spec exit_code_to_status(0 | 1 | 2) :: String.t()
   defp exit_code_to_status(0), do: "pass"
   defp exit_code_to_status(1), do: "fail"
   defp exit_code_to_status(2), do: "error"
 
+  @spec report_missing_text([missing_entry()]) :: :ok
   defp report_missing_text(missing) do
     by_file = Enum.group_by(missing, &elem(&1, 0), &elem(&1, 1))
 
@@ -328,6 +347,7 @@ defmodule SpecChecker.CLI do
     IO.puts("#{count} function#{if count == 1, do: "", else: "s"} missing @spec.")
   end
 
+  @spec usage() :: String.t()
   defp usage do
     """
     Usage:

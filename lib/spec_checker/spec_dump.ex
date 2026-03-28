@@ -86,6 +86,7 @@ defmodule SpecChecker.SpecDump do
 
   # --- Private: own specs ---
 
+  @spec extract_own_specs(String.t(), binary()) :: [spec_entry()]
   defp extract_own_specs(module_name, binary) do
     case Code.Typespec.fetch_specs(binary) do
       {:ok, specs} -> format_specs(module_name, specs, :module, nil)
@@ -95,6 +96,7 @@ defmodule SpecChecker.SpecDump do
 
   # --- Private: callback spec resolution ---
 
+  @spec extract_callback_specs(String.t(), binary(), String.t() | nil) :: [spec_entry()]
   defp extract_callback_specs(_module_name, _binary, nil), do: []
 
   defp extract_callback_specs(module_name, binary, deps_dir) do
@@ -117,6 +119,7 @@ defmodule SpecChecker.SpecDump do
     end)
   end
 
+  @spec get_behaviours(binary()) :: [module()]
   defp get_behaviours(binary) do
     case :beam_lib.chunks(binary, [:attributes]) do
       {:ok, {_mod, [attributes: attrs]}} ->
@@ -127,6 +130,7 @@ defmodule SpecChecker.SpecDump do
     end
   end
 
+  @spec find_behaviour_beam(module(), String.t()) :: {:ok, binary()} | :error
   defp find_behaviour_beam(behaviour_mod, deps_dir) do
     beam_filename = "#{behaviour_mod}.beam"
 
@@ -148,6 +152,7 @@ defmodule SpecChecker.SpecDump do
 
   # --- Private: shared helpers ---
 
+  @spec read_beam(String.t()) :: {:ok, binary()} | {:error, String.t()}
   defp read_beam(path) do
     case File.read(path) do
       {:ok, binary} -> {:ok, binary}
@@ -155,12 +160,14 @@ defmodule SpecChecker.SpecDump do
     end
   end
 
+  @spec beam_path_to_module(String.t()) :: String.t()
   defp beam_path_to_module(path) do
     path
     |> Path.basename(".beam")
     |> String.replace_leading("Elixir.", "")
   end
 
+  @spec format_specs(String.t(), list(), :module | :behaviour, String.t() | nil) :: [spec_entry()]
   defp format_specs(module_name, specs, source, behaviour) do
     Enum.flat_map(specs, fn {{name, arity}, spec_forms} ->
       Enum.map(spec_forms, fn spec ->
@@ -179,12 +186,14 @@ defmodule SpecChecker.SpecDump do
     end)
   end
 
+  @spec maybe_filter_prefix([spec_entry()], String.t() | nil) :: [spec_entry()]
   defp maybe_filter_prefix(entries, nil), do: entries
 
   defp maybe_filter_prefix(entries, prefix) do
     Enum.filter(entries, &String.starts_with?(&1.module, prefix))
   end
 
+  @spec infer_deps_dir(String.t()) :: String.t() | nil
   defp infer_deps_dir(ebin_dir) do
     parent = Path.dirname(ebin_dir)
     grandparent = Path.dirname(parent)

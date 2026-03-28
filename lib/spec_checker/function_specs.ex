@@ -45,8 +45,11 @@ defmodule SpecChecker.FunctionSpecs do
     {:ok, results}
   end
 
+  @typep walker_state :: %{specs: MapSet.t(), impl: boolean(), results: [missing_spec()]}
+
   # --- AST Walking ---
 
+  @spec find_missing_specs(Macro.t()) :: [missing_spec()]
   defp find_missing_specs(ast) do
     {_ast, state} = walk(ast, %{specs: MapSet.new(), impl: false, results: []})
 
@@ -55,6 +58,7 @@ defmodule SpecChecker.FunctionSpecs do
     |> deduplicate()
   end
 
+  @spec walk(Macro.t(), walker_state()) :: {nil, walker_state()}
   defp walk({:defmodule, _meta, [_alias, [do: body]]}, state) do
     {_body, inner_state} = walk(body, %{state | specs: MapSet.new(), impl: false})
     {nil, %{state | results: inner_state.results}}
@@ -99,6 +103,7 @@ defmodule SpecChecker.FunctionSpecs do
 
   defp walk(_other, state), do: {nil, state}
 
+  @spec walk_sequential([Macro.t()], walker_state()) :: walker_state()
   defp walk_sequential(exprs, state) do
     Enum.reduce(exprs, state, fn expr, acc ->
       elem(walk(expr, acc), 1)
@@ -107,6 +112,7 @@ defmodule SpecChecker.FunctionSpecs do
 
   # --- Function head extraction ---
 
+  @spec extract_function_head(Macro.t()) :: {atom(), non_neg_integer()} | {atom(), String.t()}
   defp extract_function_head({:when, _meta, [head | _guards]}), do: extract_function_head(head)
   defp extract_function_head({name, _meta, args}) when is_atom(name) and is_list(args), do: {name, length(args)}
   defp extract_function_head({name, _meta, nil}) when is_atom(name), do: {name, 0}
@@ -114,12 +120,14 @@ defmodule SpecChecker.FunctionSpecs do
 
   # --- Spec arity extraction ---
 
+  @spec spec_arity(nil | [Macro.t()] | Macro.t()) :: non_neg_integer()
   defp spec_arity(nil), do: 0
   defp spec_arity(args) when is_list(args), do: length(args)
   defp spec_arity(_), do: 0
 
   # --- Deduplication for multi-clause functions ---
 
+  @spec deduplicate([missing_spec()]) :: [missing_spec()]
   defp deduplicate(results) do
     Enum.uniq_by(results, fn %{name: name, arity: arity} -> {name, arity} end)
   end
