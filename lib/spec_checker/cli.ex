@@ -27,12 +27,14 @@ defmodule SpecChecker.CLI do
     args |> run() |> System.halt()
   end
 
-  @spec run([String.t()]) :: 0 | 1 | 2
+  @error_exit 255
+
+  @spec run([String.t()]) :: non_neg_integer()
   def run([]),
     do:
       (
         IO.puts(:stderr, usage())
-        1
+        @error_exit
       )
 
   def run(["--help"]),
@@ -77,10 +79,10 @@ defmodule SpecChecker.CLI do
 
   # --- Check mode ---
 
-  @spec check_files([String.t()], format()) :: 0 | 1 | 2
+  @spec check_files([String.t()], format()) :: non_neg_integer()
   defp check_files([], _format) do
     IO.puts(:stderr, usage())
-    1
+    @error_exit
   end
 
   defp check_files(file_args, format) do
@@ -110,9 +112,9 @@ defmodule SpecChecker.CLI do
 
     exit_code =
       cond do
-        all_errors != [] -> 2
+        all_errors != [] -> @error_exit
         missing_specs == [] -> 0
-        true -> 1
+        true -> cap_exit_code(length(missing_specs))
       end
 
     output_check(format, exit_code, missing_specs, all_errors)
@@ -121,10 +123,10 @@ defmodule SpecChecker.CLI do
 
   # --- Dump mode ---
 
-  @spec dump_specs([String.t()], format(), String.t() | nil, boolean(), String.t() | nil) :: 0 | 1 | 2
+  @spec dump_specs([String.t()], format(), String.t() | nil, boolean(), String.t() | nil) :: non_neg_integer()
   defp dump_specs([], _format, _output, _require_clean, _project_root) do
     IO.puts(:stderr, usage())
-    1
+    @error_exit
   end
 
   defp dump_specs([dir | rest], format, output, require_clean, project_root) do
@@ -134,7 +136,7 @@ defmodule SpecChecker.CLI do
       case root do
         nil ->
           IO.puts(:stderr, "error: --require-clean needs --project-root or an ebin path under _build/")
-          2
+          @error_exit
 
         root ->
           case run_clean_check(root, format) do
@@ -165,7 +167,7 @@ defmodule SpecChecker.CLI do
     end
   end
 
-  @spec do_dump(String.t(), [String.t()], format(), String.t() | nil) :: 0 | 2
+  @spec do_dump(String.t(), [String.t()], format(), String.t() | nil) :: 0 | 255
   defp do_dump(dir, rest, format, output) do
     prefix = List.first(rest)
     opts = if prefix, do: [prefix: prefix], else: []
@@ -177,7 +179,7 @@ defmodule SpecChecker.CLI do
 
       {:error, reason} ->
         output_dump_error(format, reason)
-        2
+        @error_exit
     end
   end
 
@@ -200,7 +202,7 @@ defmodule SpecChecker.CLI do
     IO.puts(:stderr, "Wrote #{length(specs)} specs to #{path}")
   end
 
-  @spec run_clean_check(String.t(), format()) :: :clean | {:dirty, 1}
+  @spec run_clean_check(String.t(), format()) :: :clean | {:dirty, non_neg_integer()}
   defp run_clean_check(project_root, format) do
     root = Path.expand(project_root)
     lib_dir = Path.join(root, "lib")
@@ -228,15 +230,16 @@ defmodule SpecChecker.CLI do
       if missing == [] do
         :clean
       else
-        output_check(format, 1, missing, [])
-        {:dirty, 1}
+        exit_code = cap_exit_code(length(missing))
+        output_check(format, exit_code, missing, [])
+        {:dirty, exit_code}
       end
     end
   end
 
   # --- JSON output: check mode ---
 
-  @spec output_check(format(), 0 | 1 | 2, [missing_entry()], [error_entry()]) :: :ok
+  @spec output_check(format(), non_neg_integer(), [missing_entry()], [error_entry()]) :: :ok
   defp output_check(:json, exit_code, missing_specs, errors) do
     status = exit_code_to_status(exit_code)
 
@@ -322,10 +325,20 @@ defmodule SpecChecker.CLI do
 
   # --- Helpers ---
 
-  @spec exit_code_to_status(0 | 1 | 2) :: String.t()
+  @max_exit_code 254
+
+  @spec cap_exit_code(non_neg_integer()) :: non_neg_integer()
+  defp cap_exit_code(count) when count > @max_exit_code do
+    IO.puts(:stderr, "warning: #{count} missing specs, exit code capped at #{@max_exit_code}")
+    @max_exit_code
+  end
+
+  defp cap_exit_code(count), do: count
+
+  @spec exit_code_to_status(non_neg_integer()) :: String.t()
   defp exit_code_to_status(0), do: "pass"
-  defp exit_code_to_status(1), do: "fail"
-  defp exit_code_to_status(2), do: "error"
+  defp exit_code_to_status(@error_exit), do: "error"
+  defp exit_code_to_status(_n), do: "fail"
 
   @spec report_missing_text([missing_entry()]) :: :ok
   defp report_missing_text(missing) do
@@ -368,9 +381,9 @@ defmodule SpecChecker.CLI do
       --project-root <dir>   Project root for --require-clean (inferred from ebin path if omitted)
 
     Exit codes:
-      0  Success
-      1  Missing specs found (check mode or --require-clean) or no args
-      2  Errors encountered
+      0    All specs present (or dump completed)
+      1-254  Number of missing specs found (capped at 254)
+      255  Error (parse failure, missing args, bad directory)
 
     Examples:
       check_specs lib/**/*.ex

@@ -39,7 +39,10 @@ defmodule SpecChecker.CLITest do
         end
         """)
 
-      output = capture_io(fn -> assert CLI.run([path]) == 1 end)
+      output = capture_io(fn ->
+        result = CLI.run([path])
+        assert result == 1  # 1 missing spec
+      end)
       result = decode_json(output)
       assert result["status"] == "fail"
       assert result["total_missing"] == 1
@@ -64,8 +67,8 @@ defmodule SpecChecker.CLITest do
   end
 
   describe "dump mode" do
-    test "exits 2 for nonexistent directory" do
-      output = capture_io(fn -> assert CLI.run(["--dump", "/nonexistent/ebin"]) == 2 end)
+    test "exits 255 for nonexistent directory" do
+      output = capture_io(fn -> assert CLI.run(["--dump", "/nonexistent/ebin"]) == 255 end)
       result = decode_json(output)
       assert result["status"] == "error"
     end
@@ -111,7 +114,7 @@ defmodule SpecChecker.CLITest do
                  "--output",
                  output_path,
                  ebin_dir
-               ]) == 1
+               ]) == 1  # 1 missing spec
       end)
 
       refute File.exists?(output_path)
@@ -151,7 +154,7 @@ defmodule SpecChecker.CLITest do
 
   describe "flags" do
     test "no args shows usage" do
-      output = capture_io(:stderr, fn -> assert CLI.run([]) == 1 end)
+      output = capture_io(:stderr, fn -> assert CLI.run([]) == 255 end)
       assert output =~ "Usage"
     end
 
