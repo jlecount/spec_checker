@@ -45,13 +45,13 @@ defmodule SpecChecker.FunctionSpecs do
     {:ok, results}
   end
 
-  @typep walker_state :: %{specs: MapSet.t(), impl: boolean(), results: [missing_spec()]}
+  @typep walker_state :: %{specs: MapSet.t(), impls: MapSet.t(), impl: boolean(), results: [missing_spec()]}
 
   # --- AST Walking ---
 
   @spec find_missing_specs(Macro.t()) :: [missing_spec()]
   defp find_missing_specs(ast) do
-    {_ast, state} = walk(ast, %{specs: MapSet.new(), impl: false, results: []})
+    {_ast, state} = walk(ast, %{specs: MapSet.new(), impls: MapSet.new(), impl: false, results: []})
 
     state.results
     |> Enum.reverse()
@@ -60,7 +60,7 @@ defmodule SpecChecker.FunctionSpecs do
 
   @spec walk(Macro.t(), walker_state()) :: {nil, walker_state()}
   defp walk({:defmodule, _meta, [_alias, [do: body]]}, state) do
-    {_body, inner_state} = walk(body, %{state | specs: MapSet.new(), impl: false})
+    {_body, inner_state} = walk(body, %{state | specs: MapSet.new(), impls: MapSet.new(), impl: false})
     {nil, %{state | results: inner_state.results}}
   end
 
@@ -83,9 +83,14 @@ defmodule SpecChecker.FunctionSpecs do
     line = Keyword.get(meta, :line, 0)
 
     has_spec? = MapSet.member?(state.specs, {name, arity})
-    is_impl? = state.impl
+    is_impl? = state.impl or MapSet.member?(state.impls, {name, arity})
 
-    state = %{state | impl: false}
+    state =
+      if state.impl do
+        %{state | impl: false, impls: MapSet.put(state.impls, {name, arity})}
+      else
+        %{state | impl: false}
+      end
 
     if has_spec? or is_impl? do
       {nil, state}

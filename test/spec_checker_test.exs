@@ -120,6 +120,28 @@ defmodule SpecChecker.FunctionSpecsTest do
       assert {:ok, []} = FunctionSpecs.check_file(path)
     end
 
+    test "handles multi-clause @impl functions" do
+      path =
+        write_tmp_file("impl_multi", """
+        defmodule MyChannel do
+          @impl true
+          def handle_info({:item_created, item}, socket) do
+            {:noreply, socket}
+          end
+
+          def handle_info({:item_updated, item}, socket) do
+            {:noreply, socket}
+          end
+
+          def handle_info({:item_deleted, id}, socket) do
+            {:noreply, socket}
+          end
+        end
+        """)
+
+      assert {:ok, []} = FunctionSpecs.check_file(path)
+    end
+
     test "handles guards" do
       path =
         write_tmp_file("guards", """
