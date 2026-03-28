@@ -101,5 +101,7 @@ grep "Accounts\." specs.txt
 
 ## Requirements
 
-- Elixir 1.17+
-- Erlang/OTP 27+
+- Elixir 1.14+
+- Erlang/OTP 25+
+
+Note: dump mode uses `Code.Typespec`, an undocumented Elixir API (`@moduledoc false`). It has been stable across many releases but could change without deprecation notice.

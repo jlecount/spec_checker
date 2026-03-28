@@ -5,7 +5,7 @@ defmodule SpecChecker.MixProject do
     [
       app: :spec_checker,
       version: "0.1.0",
-      elixir: "~> 1.17",
+      elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       escript: escript(),
       deps: deps()

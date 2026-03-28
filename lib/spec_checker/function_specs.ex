@@ -21,7 +21,7 @@ defmodule SpecChecker.FunctionSpecs do
 
   @spec check_source(String.t()) :: {:ok, [missing_spec()]} | {:error, String.t()}
   def check_source(source) do
-    case Code.string_to_quoted(source, columns: true, token_metadata: true) do
+    case Code.string_to_quoted(source) do
       {:ok, ast} ->
         {:ok, find_missing_specs(ast)}
 
