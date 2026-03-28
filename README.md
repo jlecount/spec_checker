@@ -154,20 +154,23 @@ Output is JSON by default (for tooling and AI agents). `--format text` gives gre
 
 ## For AI agents
 
-Look up a module's API before reading its source:
+Generate a `specs.txt` at the start of your session and keep it current as you work:
 
 ```bash
-check_specs --dump _build/dev/lib/my_app/ebin MyApp.Accounts
-```
-
-Generate a greppable reference for the whole project:
-
-```bash
+# Generate once after compilation
 check_specs --dump --format text _build/dev/lib/my_app/ebin > specs.txt
+
+# Look up a module's API (cheaper than reading source)
 grep "Accounts\." specs.txt
 ```
 
-Verify your work before committing:
+**Keep it fresh.** After any task that adds, removes, or modifies functions:
+
+```bash
+mix compile && check_specs --dump --format text _build/dev/lib/my_app/ebin > specs.txt
+```
+
+**Verify your work** before committing — check that all new/changed functions have specs:
 
 ```bash
 check_specs lib/my_app/accounts.ex lib/my_app/worker.ex
